@@ -32,6 +32,11 @@ pipx install --editable .
 pip install .
 ```
 
+### Direct install from Github
+```bash
+pipx install git+https://github.com/Onlydns/onlydns-sdk-python
+```
+
 ### From PyPI (once published)
 
 ```bash
