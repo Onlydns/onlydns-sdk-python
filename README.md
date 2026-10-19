@@ -167,7 +167,7 @@ client.add_record(
     domain_name="example.com",
     name="api",
     type=RecordType.A,
-    records="192.0.2.1",
+    records=["192.0.2.1"],
     ttl=300
 )
 
@@ -252,7 +252,7 @@ def set_dns_endpoint(subdomain: str, ip_address: str, domain: str = "example.com
         domain_name=domain,
         name=subdomain,
         type="A",
-        records=ip_address,
+        records=[ip_address],
         ttl=300
     )
     return f"Successfully configured {subdomain}.{domain} -> {ip_address}"
