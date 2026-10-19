@@ -31,6 +31,6 @@ dependencies = []
 onlydns = "onlydns.cli:main"
 
 [project.urls]
-Homepage = "https://onlydns.com"
+Homepage = "https://www.onlydns.com"
 Documentation = "https://api-docs.onlydns.com/"
 Repository = "https://github.com/onlydns/onlydns-sdk-python"
