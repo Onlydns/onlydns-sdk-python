@@ -132,14 +132,14 @@ onlydns dnssec disable example.com
 # List TSIG keys
 onlydns tsig list
 
-# Create a new TSIG key
-onlydns tsig create --name my-key --algo hmac-sha256
+# Create a new TSIG key (key name is generated automatically)
+onlydns tsig create --algo hmac-sha256
 
 # Get TSIG key details
-onlydns tsig get my-key
+onlydns tsig get <key_name>
 
 # Set domain TSIG permissions
-onlydns tsig set-permissions example.com my-key --transfer --update
+onlydns tsig set-permissions example.com <key_name> --transfer --update
 
 # Clear domain TSIG keys
 onlydns tsig clear example.com
