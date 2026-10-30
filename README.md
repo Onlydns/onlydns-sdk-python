@@ -1,8 +1,12 @@
 # OnlyDNS Python SDK
 
-Official Python SDK for the [OnlyDNS System API](https://api-docs.onlydns.com/).
+Official Python SDK and CLI for [OnlyDNS](https://www.onlydns.com) to programmatically manage authoritative Anycast DNS zones, records, 1-click DNSSEC, and RFC 2136 TSIG keys. Learn more in the [OnlyDNS Technical How-To Guides](https://www.onlydns.com/howto/).
 
-Designed for high developer utility and seamless AI agent tool calling with zero external dependencies.
+```bash
+pip install onlydns-sdk
+```
+
+**Authentication Environment Variable:** `ONLYDNS_API_TOKEN`.
 
 ## Features
 
@@ -10,7 +14,7 @@ Designed for high developer utility and seamless AI agent tool calling with zero
 - **High-Level Atomic Helpers**: Convenient `add_record`, `remove_record`, `update_record`, and `find_records` methods that simplify record manipulation for human developers and autonomous AI agents.
 - **Strong Typing**: Comprehensive type hints and dataclasses for reliable IDE autocompletion and runtime validation.
 - **Zero Heavy Dependencies**: Built on standard library `urllib` for lightweight execution across all Python environments.
-- **Environment Aware**: Automatically resolves authentication from `ONLYDNS_API_KEY` or `ONLYDNS_API_TOKEN`.
+- **Environment Aware**: Automatically resolves authentication from `ONLYDNS_API_TOKEN`.
 
 ## Installation
 
@@ -51,7 +55,7 @@ The Python SDK includes a built-in CLI tool (`onlydns` or `python -m onlydns`) f
 
 ### 1. Authentication & Configuration
 
-The CLI resolves API tokens from the `ONLYDNS_API_KEY` environment variable, or from stored credentials in `~/.config/onlydns/config.json`.
+The CLI resolves API tokens from the `ONLYDNS_API_TOKEN` environment variable, or from stored credentials in `~/.config/onlydns/config.json`.
 
 ```bash
 # Save your API key to ~/.config/onlydns/config.json
@@ -72,7 +76,7 @@ onlydns config clear
 Alternatively, use an environment variable or the `-k` / `--api-key` flag:
 
 ```bash
-export ONLYDNS_API_KEY="your_api_bearer_token"
+export ONLYDNS_API_TOKEN="your_api_bearer_token"
 # or
 onlydns -k your_api_bearer_token domains list
 ```
@@ -138,8 +142,15 @@ onlydns tsig create --algo hmac-sha256
 # Get TSIG key details
 onlydns tsig get <key_name>
 
-# Set domain TSIG permissions
+# View TSIG keys and permissions configured on a domain
+onlydns tsig get-domain example.com
+
+# Set domain TSIG permissions for whole zone
 onlydns tsig set-permissions example.com <key_name> --transfer --update
+
+# Restrict Dynamic DNS Updates to specific subdomain(s) (e.g. ACME DNS-01 challenges)
+onlydns tsig set-permissions example.com <key_name> --update --subdomain _acme-challenge
+onlydns tsig set-permissions example.com <key_name> -s _acme-challenge -s staging
 
 # Clear domain TSIG keys
 onlydns tsig clear example.com
@@ -150,7 +161,7 @@ onlydns tsig clear example.com
 ```python
 from onlydns import OnlyDNSClient, RecordType
 
-# Initialize client (uses ONLYDNS_API_KEY from environment if not provided)
+# Initialize client (uses ONLYDNS_API_TOKEN from environment if not provided)
 client = OnlyDNSClient(api_token="your_api_bearer_token")
 
 # 1. List Domains
@@ -210,12 +221,25 @@ keys = client.get_tsig_keys()
 new_key = client.create_tsig_key(algorithm=TsigAlgorithm.HMAC_SHA256)
 print(f"Created TSIG key: {new_key.name}")
 
-# Configure domain TSIG permissions
+# Inspect TSIG permissions on a domain
+domain_tsig = client.get_domain_tsig("example.com")
+print(f"Configured TSIG keys for domain: {domain_tsig}")
+
+# Configure domain TSIG permissions across zone
 client.update_domain_tsig(
     domain_name="example.com",
     key_name=new_key.name,
     allow_axfr=True,
     allow_dns_update=True
+)
+
+# Restrict Dynamic DNS Updates to specific subdomains
+client.update_domain_tsig(
+    domain_name="example.com",
+    key_name=new_key.name,
+    allow_axfr=False,
+    allow_dns_update=True,
+    subdomains=["_acme-challenge", "staging"]
 )
 
 # Delete domain TSIG keys

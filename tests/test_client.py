@@ -152,6 +152,33 @@ class TestOnlyDNSClient(unittest.TestCase):
         self.assertEqual(key.algorithm, TsigAlgorithm.HMAC_SHA256)
         self.assertEqual(key.key, "secretbase64==")
 
+        # Get Domain TSIG
+        mock_get_domain = MagicMock()
+        mock_get_domain.status = 200
+        mock_get_domain.read.return_value = json.dumps({
+            "key-test-1": {
+                "allowAxfr": True,
+                "allowDnsUpdate": True,
+                "subdomains": ["_acme-challenge", "staging"],
+            }
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_get_domain
+
+        domain_perms = self.client.get_domain_tsig("example.com")
+        self.assertIn("key-test-1", domain_perms)
+        self.assertTrue(domain_perms["key-test-1"].allow_axfr)
+        self.assertTrue(domain_perms["key-test-1"].allow_dns_update)
+        self.assertEqual(domain_perms["key-test-1"].subdomains, ["_acme-challenge", "staging"])
+
+        # Update Domain TSIG with subdomains
+        mock_patch = MagicMock()
+        mock_patch.status = 200
+        mock_patch.read.return_value = b"{}"
+        mock_urlopen.return_value.__enter__.return_value = mock_patch
+
+        self.client.update_domain_tsig("example.com", "key-test-1", True, True, subdomains=["_acme-challenge"])
+        self.assertTrue(mock_urlopen.called)
+
     @patch("urllib.request.urlopen")
     def test_create_domain(self, mock_urlopen):
         mock_resp = MagicMock()

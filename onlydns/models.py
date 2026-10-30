@@ -205,18 +205,30 @@ class DomainTsigPermissions:
     """Permissions for a TSIG key on a specific domain."""
     allow_axfr: bool
     allow_dns_update: bool
+    subdomains: Optional[List[str]] = None
 
-    def to_dict(self) -> Dict[str, bool]:
-        return {
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
             "allowAxfr": self.allow_axfr,
             "allowDnsUpdate": self.allow_dns_update,
         }
+        if self.subdomains is not None:
+            d["subdomains"] = list(self.subdomains)
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DomainTsigPermissions":
+        raw_subdomains = data.get("subdomains")
+        subdomains: Optional[List[str]] = None
+        if raw_subdomains is not None:
+            if isinstance(raw_subdomains, list):
+                subdomains = [str(s) for s in raw_subdomains]
+            else:
+                subdomains = [str(raw_subdomains)]
         return cls(
             allow_axfr=bool(data.get("allowAxfr", False)),
             allow_dns_update=bool(data.get("allowDnsUpdate", False)),
+            subdomains=subdomains,
         )
 
 

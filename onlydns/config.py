@@ -88,11 +88,10 @@ def get_api_key() -> Optional[str]:
     """Resolve API key from environment variables or stored configuration.
 
     Priority:
-    1. ONLYDNS_API_KEY environment variable
-    2. ONLYDNS_API_TOKEN environment variable
-    3. Stored config file (~/.config/onlydns/config.json)
+    1. ONLYDNS_API_TOKEN environment variable
+    2. Stored config file (~/.config/onlydns/config.json)
     """
-    env_token = os.environ.get("ONLYDNS_API_KEY") or os.environ.get("ONLYDNS_API_TOKEN")
+    env_token = os.environ.get("ONLYDNS_API_TOKEN")
     if env_token and env_token.strip():
         return env_token.strip()
     return get_stored_api_token()

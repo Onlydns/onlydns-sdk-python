@@ -44,7 +44,7 @@ class OnlyDNSClient:
 
         Args:
             api_token: OnlyDNS API bearer token. If omitted, checks
-                       `ONLYDNS_API_KEY` or `ONLYDNS_API_TOKEN` environment variables,
+                       `ONLYDNS_API_TOKEN` environment variable,
                        or stored credentials in `~/.config/onlydns/config.json`.
             base_url: Base API URL (defaults to https://api.onlydns.com/v1).
             timeout: HTTP request timeout in seconds.
@@ -52,7 +52,7 @@ class OnlyDNSClient:
         token = api_token or get_api_key()
         if not token:
             raise AuthenticationError(
-                "API token is required. Pass api_token, set ONLYDNS_API_KEY environment variable, "
+                "API token is required. Pass api_token, set ONLYDNS_API_TOKEN environment variable, "
                 "or configure it with `onlydns config set-key <KEY>`."
             )
         resolved_base_url = (
@@ -82,7 +82,7 @@ class OnlyDNSClient:
         headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Accept": "application/json",
-            "User-Agent": "OnlyDNS-Python-SDK/1.0.0",
+            "User-Agent": "OnlyDNS-Python-SDK/1.0.1",
         }
 
         data_bytes = None
@@ -417,6 +417,24 @@ class OnlyDNSClient:
         res = self._request("GET", f"/dns/tsig/{encoded_key}")
         return TsigKey.from_dict(res)
 
+    def get_domain_tsig(self, domain_name: str) -> Dict[str, DomainTsigPermissions]:
+        """Get all TSIG keys and permissions associated with a domain.
+
+        Args:
+            domain_name: Domain name.
+
+        Returns:
+            Dictionary mapping TSIG key names to DomainTsigPermissions.
+        """
+        encoded_domain = urllib.parse.quote(domain_name, safe="")
+        res = self._request("GET", f"/dns/{encoded_domain}/tsig")
+        if isinstance(res, dict):
+            return {
+                k: DomainTsigPermissions.from_dict(v if isinstance(v, dict) else {})
+                for k, v in res.items()
+            }
+        return {}
+
     def delete_domain_tsig(self, domain_name: str) -> None:
         """Delete all TSIG keys associated with a domain.
 
@@ -432,6 +450,7 @@ class OnlyDNSClient:
         key_name: str,
         allow_axfr: bool,
         allow_dns_update: bool,
+        subdomains: Optional[List[str]] = None,
     ) -> None:
         """Update the TSIG key access settings on a domain.
 
@@ -440,13 +459,16 @@ class OnlyDNSClient:
             key_name: TSIG key name.
             allow_axfr: Whether to allow AXFR zone transfers.
             allow_dns_update: Whether to allow dynamic DNS updates.
+            subdomains: Optional list of subdomains to restrict dynamic DNS updates to.
         """
         encoded_domain = urllib.parse.quote(domain_name, safe="")
         encoded_key = urllib.parse.quote(key_name, safe="")
-        body = {
+        body: Dict[str, Any] = {
             "allowAxfr": bool(allow_axfr),
             "allowDnsUpdate": bool(allow_dns_update),
         }
+        if subdomains is not None:
+            body["subdomains"] = list(subdomains)
         self._request("PATCH", f"/dns/{encoded_domain}/tsig/{encoded_key}", body=body)
 
     # --------------------------------------------------------------------------

@@ -64,4 +64,4 @@ __all__ = [
     "ErrorResponse",
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

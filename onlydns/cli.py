@@ -55,6 +55,20 @@ def _format_records_table(records: list) -> str:
     return "\n".join(lines)
 
 
+def _format_domain_tsig_permissions(domain: str, perms: dict) -> str:
+    """Format domain TSIG key permissions dictionary into a readable string."""
+    if not perms:
+        return f"No TSIG keys configured for domain '{domain}'."
+    lines = [f"TSIG Key Permissions for domain '{domain}':"]
+    for k, p in perms.items():
+        sub_list = p.subdomains if hasattr(p, "subdomains") and p.subdomains else (p.get("subdomains", []) if isinstance(p, dict) else [])
+        sub_str = f" (Subdomains: {', '.join(sub_list)})" if sub_list else ""
+        allow_axfr = p.allow_axfr if hasattr(p, "allow_axfr") else (p.get("allowAxfr", False) if isinstance(p, dict) else False)
+        allow_dns_update = p.allow_dns_update if hasattr(p, "allow_dns_update") else (p.get("allowDnsUpdate", False) if isinstance(p, dict) else False)
+        lines.append(f"  - {k:<28} AXFR={allow_axfr}, DynamicUpdate={allow_dns_update}{sub_str}")
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------------------
 # Subcommand Handlers
 # ------------------------------------------------------------------------------
@@ -437,36 +451,62 @@ def cmd_tsig(args: argparse.Namespace) -> int:
                 print(f"  Secret:    {key.key}")
         return 0
 
+    elif action in ("get-domain", "domain"):
+        domain = getattr(args, "domain", None)
+        if not domain:
+            print("Error: Domain name is required. Usage: onlydns tsig get-domain <domain>", file=sys.stderr)
+            return 2
+        perms = client.get_domain_tsig(domain)
+        if getattr(args, "json", False):
+            print(json.dumps({k: v.to_dict() if hasattr(v, "to_dict") else v for k, v in perms.items()}, indent=2))
+        else:
+            print(_format_domain_tsig_permissions(domain, perms))
+        return 0
+
     elif action == "set-permissions":
         domain = getattr(args, "domain", None)
         key_name = getattr(args, "key_name", None)
         if not domain or not key_name:
-            print("Error: Domain name and TSIG key name are required. Usage: onlydns tsig set-permissions <domain> <key_name> [--transfer] [--update]", file=sys.stderr)
+            print("Error: Domain name and TSIG key name are required. Usage: onlydns tsig set-permissions <domain> <key_name> [--transfer] [--update] [--subdomain SUBDOMAIN]", file=sys.stderr)
             return 2
-        transfer = bool(getattr(args, "transfer", False))
-        update = bool(getattr(args, "update", False))
+
+        raw_subdomains = getattr(args, "subdomain", None) or []
+        if isinstance(raw_subdomains, str):
+            raw_subdomains = [raw_subdomains]
+        subdomains = []
+        for s in raw_subdomains:
+            for part in s.split(","):
+                if part.strip():
+                    subdomains.append(part.strip())
+
+        transfer = bool(getattr(args, "transfer", False) or getattr(args, "axfr", False))
+        update = bool(getattr(args, "update", False) or subdomains)
+
         client.update_domain_tsig(
             domain_name=domain,
             key_name=key_name,
             allow_axfr=transfer,
             allow_dns_update=update,
+            subdomains=subdomains if subdomains else None,
         )
+
+        payload: dict = {
+            "status": "ok",
+            "domain": domain,
+            "key_name": key_name,
+            "allow_axfr": transfer,
+            "allow_dns_update": update,
+        }
+        if subdomains:
+            payload["subdomains"] = subdomains
+
         if getattr(args, "json", False):
-            print(
-                json.dumps(
-                    {
-                        "status": "ok",
-                        "domain": domain,
-                        "key_name": key_name,
-                        "allow_axfr": transfer,
-                        "allow_dns_update": update,
-                    }
-                )
-            )
+            print(json.dumps(payload, indent=2))
         else:
+            sub_msg = f", Subdomains=[{', '.join(subdomains)}]" if subdomains else ""
             print(
                 f"Updated TSIG permissions for domain '{domain}' key '{key_name}': "
-                f"AXFR={transfer}, DynamicUpdate={update}."
+                f"AXFR={transfer}, DynamicUpdate={update}{sub_msg}."
             )
         return 0
 
@@ -482,7 +522,7 @@ def cmd_tsig(args: argparse.Namespace) -> int:
             print(f"Cleared all TSIG keys for domain '{domain}'.")
         return 0
 
-    print(f"Error: Unknown tsig action '{action}'. Available actions: list, create, get, set-permissions, clear", file=sys.stderr)
+    print(f"Error: Unknown tsig action '{action}'. Available actions: list, create, get, get-domain, set-permissions, clear", file=sys.stderr)
     return 2
 
 
@@ -536,7 +576,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--version",
         "-V",
         action="version",
-        version="onlydns-sdk 1.0.0",
+        version="onlydns-sdk 1.0.1",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -631,11 +671,15 @@ def build_parser() -> argparse.ArgumentParser:
     tsig_get_p = tsig_sub.add_parser("get", help="Get details of a TSIG key")
     tsig_get_p.add_argument("key_name", help="TSIG key name")
 
+    tsig_get_dom_p = tsig_sub.add_parser("get-domain", aliases=["domain"], help="Get TSIG key permissions configured for a domain")
+    tsig_get_dom_p.add_argument("domain", help="Domain name")
+
     tsig_perm_p = tsig_sub.add_parser("set-permissions", help="Set domain TSIG transfer and update permissions")
     tsig_perm_p.add_argument("domain", help="Domain name")
     tsig_perm_p.add_argument("key_name", help="TSIG key name")
-    tsig_perm_p.add_argument("--transfer", action="store_true", help="Allow AXFR zone transfers")
+    tsig_perm_p.add_argument("--transfer", "--axfr", action="store_true", help="Allow AXFR zone transfers")
     tsig_perm_p.add_argument("--update", action="store_true", help="Allow dynamic DNS updates")
+    tsig_perm_p.add_argument("--subdomain", "--subdomains", "-s", action="append", default=[], help="Subdomain restriction for Dynamic DNS Updates (e.g. '_acme-challenge', 'staging')")
 
     tsig_clear_p = tsig_sub.add_parser("clear", help="Clear all TSIG keys for a domain")
     tsig_clear_p.add_argument("domain", help="Domain name")
@@ -701,7 +745,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(json.dumps({"error": "AuthenticationError", "message": str(e), "details": getattr(e, "details", [])}))
         else:
             print(f"Authentication Error: {e}", file=sys.stderr)
-            print("Tip: Run `onlydns config set-key <YOUR_KEY>` or set ONLYDNS_API_KEY environment variable.", file=sys.stderr)
+            print("Tip: Run `onlydns config set-key <YOUR_KEY>` or set ONLYDNS_API_TOKEN environment variable.", file=sys.stderr)
         return 1
     except NotFoundError as e:
         if getattr(args, "json", False):

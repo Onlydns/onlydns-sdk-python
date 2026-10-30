@@ -20,7 +20,7 @@ from onlydns.config import (
     set_api_key,
 )
 from onlydns.exceptions import AuthenticationError, NotFoundError
-from onlydns.models import DNSRecord, DNSSECStatus, RecordType, TsigKey
+from onlydns.models import DNSRecord, DNSSECStatus, DomainTsigPermissions, RecordType, TsigAlgorithm, TsigKey
 
 
 class TestConfig(unittest.TestCase):
@@ -30,7 +30,6 @@ class TestConfig(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.orig_xdg = os.environ.get("XDG_CONFIG_HOME")
         os.environ["XDG_CONFIG_HOME"] = self.test_dir
-        self.orig_api_key = os.environ.pop("ONLYDNS_API_KEY", None)
         self.orig_api_token = os.environ.pop("ONLYDNS_API_TOKEN", None)
 
     def tearDown(self):
@@ -39,8 +38,6 @@ class TestConfig(unittest.TestCase):
         else:
             os.environ.pop("XDG_CONFIG_HOME", None)
 
-        if self.orig_api_key:
-            os.environ["ONLYDNS_API_KEY"] = self.orig_api_key
         if self.orig_api_token:
             os.environ["ONLYDNS_API_TOKEN"] = self.orig_api_token
 
@@ -58,7 +55,7 @@ class TestConfig(unittest.TestCase):
         set_api_key("stored_key_456")
         self.assertEqual(get_api_key(), "stored_key_456")
 
-        os.environ["ONLYDNS_API_KEY"] = "env_key_789"
+        os.environ["ONLYDNS_API_TOKEN"] = "env_key_789"
         self.assertEqual(get_api_key(), "env_key_789")
 
     def test_clear_config(self):
@@ -75,7 +72,6 @@ class TestCLI(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.orig_xdg = os.environ.get("XDG_CONFIG_HOME")
         os.environ["XDG_CONFIG_HOME"] = self.test_dir
-        self.orig_api_key = os.environ.pop("ONLYDNS_API_KEY", None)
         self.orig_api_token = os.environ.pop("ONLYDNS_API_TOKEN", None)
 
     def tearDown(self):
@@ -84,8 +80,6 @@ class TestCLI(unittest.TestCase):
         else:
             os.environ.pop("XDG_CONFIG_HOME", None)
 
-        if self.orig_api_key:
-            os.environ["ONLYDNS_API_KEY"] = self.orig_api_key
         if self.orig_api_token:
             os.environ["ONLYDNS_API_TOKEN"] = self.orig_api_token
 
@@ -266,10 +260,14 @@ class TestCLI(unittest.TestCase):
 
     @patch("onlydns.cli.OnlyDNSClient")
     def test_tsig_commands(self, mock_client_cls):
+        from onlydns.models import DomainTsigPermissions
         mock_client = MagicMock()
         mock_client.get_tsig_keys.return_value = [
-            TsigKey(name="key1", algorithm="hmac-sha256"),
+            TsigKey(name="key1", algorithm=TsigAlgorithm.HMAC_SHA256),
         ]
+        mock_client.get_domain_tsig.return_value = {
+            "key1": DomainTsigPermissions(allow_axfr=True, allow_dns_update=True, subdomains=["_acme_challenge", "staging"]),
+        }
         mock_client_cls.return_value = mock_client
 
         # List TSIG
@@ -278,18 +276,52 @@ class TestCLI(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("key1", fake_out.getvalue())
 
-        # Set permissions
+        # Get Domain TSIG (text output)
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = main(["-k", "token123", "tsig", "get-domain", "example.com"])
+            self.assertEqual(code, 0)
+            output = fake_out.getvalue()
+            self.assertIn("TSIG Key Permissions for domain 'example.com':", output)
+            self.assertIn("key1", output)
+            self.assertIn("Subdomains: _acme_challenge, staging", output)
+
+        # Get Domain TSIG (JSON output)
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = main(["-k", "token123", "--json", "tsig", "get-domain", "example.com"])
+            self.assertEqual(code, 0)
+            data = json.loads(fake_out.getvalue())
+            self.assertEqual(data["key1"]["allowAxfr"], True)
+            self.assertEqual(data["key1"]["subdomains"], ["_acme_challenge", "staging"])
+
+        # Set permissions without subdomains
         code = main([
             "-k", "token123",
             "tsig", "set-permissions", "example.com", "key1",
             "--transfer", "--update",
         ])
         self.assertEqual(code, 0)
-        mock_client.update_domain_tsig.assert_called_once_with(
+        mock_client.update_domain_tsig.assert_called_with(
             domain_name="example.com",
             key_name="key1",
             allow_axfr=True,
             allow_dns_update=True,
+            subdomains=None,
+        )
+
+        # Set permissions with --subdomain / -s flags
+        code = main([
+            "-k", "token123",
+            "tsig", "set-permissions", "example.com", "key1",
+            "--subdomain", "_acme_challenge",
+            "-s", "staging",
+        ])
+        self.assertEqual(code, 0)
+        mock_client.update_domain_tsig.assert_called_with(
+            domain_name="example.com",
+            key_name="key1",
+            allow_axfr=False,
+            allow_dns_update=True,
+            subdomains=["_acme_challenge", "staging"],
         )
 
         # Clear TSIG
