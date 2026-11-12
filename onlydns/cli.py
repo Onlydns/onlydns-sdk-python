@@ -526,6 +526,115 @@ def cmd_tsig(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_account(args: argparse.Namespace) -> int:
+    """Handle account metadata and custom OIDC SSO commands."""
+    client = _create_client(args)
+    action = getattr(args, "account_action", None) or "get"
+
+    if action in ("get", "info", "show"):
+        info = client.get_account()
+        if getattr(args, "json", False):
+            print(json.dumps(info.to_dict(), indent=2))
+        else:
+            print("Account Details:")
+            print(f"  Account ID:   {info.account_id}")
+            if info.company_name:
+                print(f"  Company:      {info.company_name}")
+            if info.first_name or info.last_name:
+                print(f"  Contact Name: {info.first_name} {info.last_name}".strip())
+            if info.address:
+                addr = info.address
+                addr_parts = [p for p in [addr.street1, addr.street2, addr.city, addr.state, addr.postal_code, addr.country_id] if p]
+                print(f"  Address:      {', '.join(addr_parts)}")
+            if info.package:
+                pkg = info.package
+                print(f"  Package:      {pkg.description} (${pkg.amount:.2f}/mo)")
+                feats = pkg.features
+                print(f"  Features:     Domains={feats.domains}, Records={feats.records}, Queries={feats.queries}")
+                print(f"                DNSSEC={feats.dnssec}, TSIG={feats.tsig}, Proxy={feats.proxy}, CustomSSO={feats.custom_sso}")
+        return 0
+
+    elif action == "oidc":
+        oidc_action = getattr(args, "oidc_action", None) or "get"
+        if oidc_action in ("get", "show"):
+            cfg = client.get_account_oidc()
+            if getattr(args, "json", False):
+                print(json.dumps(cfg.to_dict(), indent=2))
+            else:
+                print("Custom OIDC SSO Configuration:")
+                print(f"  Configured:     {cfg.configured}")
+                if cfg.configured:
+                    print(f"  Discovery URL:  {cfg.discovery_url}")
+                    print(f"  Client ID:      {cfg.client_id}")
+                    if cfg.client_secret_masked:
+                        print(f"  Client Secret:  {cfg.client_secret_masked}")
+                    print(f"  Enforce SSO:    {cfg.enforce_sso}")
+                    print(f"  Admins Count:   {cfg.break_glass_admins_count}")
+                    if cfg.non_compliant_users:
+                        print(f"  Non-Compliant:  {len(cfg.non_compliant_users)} users")
+                        for u in cfg.non_compliant_users:
+                            print(f"    - {u.user_name} ({u.user_id}): {u.reason}")
+            return 0
+
+        elif oidc_action in ("set", "save", "update"):
+            discovery_url = getattr(args, "discovery_url", None)
+            client_id = getattr(args, "client_id", None)
+            client_secret = getattr(args, "client_secret", None)
+            enforce_sso = getattr(args, "enforce_sso", None)
+
+            cfg = client.save_account_oidc(
+                discovery_url=discovery_url,
+                client_id=client_id,
+                client_secret=client_secret,
+                enforce_sso=enforce_sso,
+            )
+            if getattr(args, "json", False):
+                print(json.dumps(cfg.to_dict(), indent=2))
+            else:
+                print("Custom OIDC SSO configuration saved successfully.")
+                print(f"  Discovery URL:  {cfg.discovery_url}")
+                print(f"  Client ID:      {cfg.client_id}")
+                print(f"  Enforce SSO:    {cfg.enforce_sso}")
+            return 0
+
+        elif oidc_action in ("delete", "remove", "clear"):
+            res = client.delete_account_oidc()
+            if getattr(args, "json", False):
+                print(json.dumps(res, indent=2))
+            else:
+                print("Custom OIDC SSO configuration removed successfully.")
+            return 0
+
+        elif oidc_action == "test":
+            discovery_url = getattr(args, "discovery_url", None)
+            client_id = getattr(args, "client_id", None)
+            client_secret = getattr(args, "client_secret", None)
+            res = client.test_account_oidc(discovery_url=discovery_url, client_id=client_id, client_secret=client_secret)
+            if getattr(args, "json", False):
+                print(json.dumps(res.to_dict(), indent=2))
+            else:
+                if res.success:
+                    print("OIDC SSO discovery endpoint test successful.")
+                    if res.issuer:
+                        print(f"  Issuer:         {res.issuer}")
+                    if res.authorization_endpoint:
+                        print(f"  Auth Endpoint:  {res.authorization_endpoint}")
+                    if res.token_endpoint:
+                        print(f"  Token Endpoint: {res.token_endpoint}")
+                    if res.client_credentials_tested:
+                        status = "Validated" if res.client_credentials_valid else "Failed"
+                        print(f"  Client Creds:   {status}")
+                else:
+                    print("OIDC SSO discovery endpoint test failed.")
+            return 0
+
+        print(f"Error: Unknown oidc action '{oidc_action}'. Available actions: get, set, delete, test", file=sys.stderr)
+        return 2
+
+    print(f"Error: Unknown account action '{action}'. Available actions: get, oidc", file=sys.stderr)
+    return 2
+
+
 # ------------------------------------------------------------------------------
 # Argument Parser Construction
 # ------------------------------------------------------------------------------
@@ -574,9 +683,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--version",
-        "-V",
         action="version",
-        version="onlydns-sdk 1.0.1",
+        version="onlydns-sdk 1.0.2",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -684,6 +792,31 @@ def build_parser() -> argparse.ArgumentParser:
     tsig_clear_p = tsig_sub.add_parser("clear", help="Clear all TSIG keys for a domain")
     tsig_clear_p.add_argument("domain", help="Domain name")
 
+    # 6. Account Subcommand
+    account_p = subparsers.add_parser("account", help="Manage account details and custom OIDC SSO")
+    account_sub = account_p.add_subparsers(dest="account_action", help="Account actions")
+
+    account_sub.add_parser("get", help="Get account metadata and package feature entitlements")
+
+    oidc_p = account_sub.add_parser("oidc", help="Manage custom OIDC SSO settings")
+    oidc_sub = oidc_p.add_subparsers(dest="oidc_action", help="OIDC SSO actions")
+
+    oidc_sub.add_parser("get", help="Get custom OIDC SSO configuration")
+
+    oidc_set_p = oidc_sub.add_parser("set", help="Configure or update custom OIDC SSO settings")
+    oidc_set_p.add_argument("--discovery-url", help="OIDC Discovery URL (.well-known/openid-configuration)")
+    oidc_set_p.add_argument("--client-id", help="OIDC Client ID")
+    oidc_set_p.add_argument("--client-secret", help="OIDC Client Secret")
+    oidc_set_p.add_argument("--enforce-sso", action="store_true", default=None, help="Enforce SSO login policy")
+    oidc_set_p.add_argument("--no-enforce-sso", action="store_false", dest="enforce_sso", help="Disable SSO login enforcement")
+
+    oidc_sub.add_parser("delete", help="Remove custom OIDC SSO configuration")
+
+    oidc_test_p = oidc_sub.add_parser("test", help="Test OIDC discovery URL reachability")
+    oidc_test_p.add_argument("--discovery-url", help="Optional OIDC Discovery URL to test")
+    oidc_test_p.add_argument("--client-id", help="Optional Client ID to validate")
+    oidc_test_p.add_argument("--client-secret", help="Optional Client Secret to validate")
+
     return parser
 
 
@@ -736,6 +869,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return cmd_dnssec(args)
         elif args.command == "tsig":
             return cmd_tsig(args)
+        elif args.command == "account":
+            return cmd_account(args)
         else:
             parser = build_parser()
             parser.print_help()

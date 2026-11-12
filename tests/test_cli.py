@@ -412,6 +412,83 @@ class TestCLI(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("example.com", fake_out.getvalue())
 
+    @patch("onlydns.cli.OnlyDNSClient")
+    def test_account_commands(self, mock_client_cls):
+        from onlydns.models import AccountInfo, AccountOidcConfig, AccountOidcTestResponse, BillingPackage, BillingPackageFeatures
+        mock_client = MagicMock()
+        mock_client.get_account.return_value = AccountInfo(
+            account_id="018f1234-5678-7000-8000-000000000001",
+            company_name="Acme Corp",
+            package=BillingPackage(
+                id="pkg-1",
+                description="Enterprise",
+                amount=49.99,
+                features=BillingPackageFeatures(custom_sso=True),
+            ),
+        )
+        mock_client.get_account_oidc.return_value = AccountOidcConfig(
+            configured=True,
+            client_id="client-123",
+            discovery_url="https://idp.example.com",
+            enforce_sso=True,
+        )
+        mock_client.save_account_oidc.return_value = AccountOidcConfig(
+            configured=True,
+            client_id="client-123",
+            discovery_url="https://idp.example.com",
+            enforce_sso=True,
+        )
+        mock_client.delete_account_oidc.return_value = {"success": True, "message": "deleted"}
+        mock_client.test_account_oidc.return_value = AccountOidcTestResponse(
+            success=True,
+            issuer="https://idp.example.com",
+        )
+        mock_client_cls.return_value = mock_client
+
+        # 1. account get
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = main(["-k", "token123", "account", "get"])
+            self.assertEqual(code, 0)
+            out = fake_out.getvalue()
+            self.assertIn("018f1234-5678-7000-8000-000000000001", out)
+            self.assertIn("CustomSSO=True", out)
+
+        # 2. account oidc get
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = main(["-k", "token123", "account", "oidc", "get"])
+            self.assertEqual(code, 0)
+            out = fake_out.getvalue()
+            self.assertIn("Configured:     True", out)
+            self.assertIn("client-123", out)
+
+        # 3. account oidc set
+        code = main([
+            "-k", "token123",
+            "account", "oidc", "set",
+            "--discovery-url", "https://idp.example.com",
+            "--client-id", "client-123",
+            "--client-secret", "secret123",
+            "--enforce-sso",
+        ])
+        self.assertEqual(code, 0)
+        mock_client.save_account_oidc.assert_called_once_with(
+            discovery_url="https://idp.example.com",
+            client_id="client-123",
+            client_secret="secret123",
+            enforce_sso=True,
+        )
+
+        # 4. account oidc test
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            code = main(["-k", "token123", "account", "oidc", "test", "--discovery-url", "https://idp.example.com"])
+            self.assertEqual(code, 0)
+            self.assertIn("OIDC SSO discovery endpoint test successful", fake_out.getvalue())
+
+        # 5. account oidc delete
+        code = main(["-k", "token123", "account", "oidc", "delete"])
+        self.assertEqual(code, 0)
+        mock_client.delete_account_oidc.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

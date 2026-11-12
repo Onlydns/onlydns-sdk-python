@@ -34,6 +34,13 @@ from .models import (
     DNSSECStatus,
     DNSDnssecStatusResponse,
     ErrorResponse,
+    AccountPostalAddress,
+    BillingPackageFeatures,
+    BillingPackage,
+    AccountInfo,
+    AccountOidcNonCompliantUser,
+    AccountOidcConfig,
+    AccountOidcTestResponse,
 )
 
 __all__ = [
@@ -62,6 +69,13 @@ __all__ = [
     "DNSSECStatus",
     "DNSDnssecStatusResponse",
     "ErrorResponse",
+    "AccountPostalAddress",
+    "BillingPackageFeatures",
+    "BillingPackage",
+    "AccountInfo",
+    "AccountOidcNonCompliantUser",
+    "AccountOidcConfig",
+    "AccountOidcTestResponse",
 ]
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"

@@ -232,6 +232,111 @@ class TestOnlyDNSClient(unittest.TestCase):
         self.client.disable_dnssec("example.com")
 
     @patch("urllib.request.urlopen")
+    def test_account_operations(self, mock_urlopen):
+        # 1. get_account
+        mock_get_acc = MagicMock()
+        mock_get_acc.status = 200
+        mock_get_acc.read.return_value = json.dumps({
+            "accountId": "018f1234-5678-7000-8000-000000000001",
+            "activeAt": "2024-01-01T00:00:00+00:00",
+            "companyName": "Acme Corporation",
+            "firstName": "Jane",
+            "lastName": "Doe",
+            "address": {
+                "street1": "123 Innovation Way",
+                "city": "Austin",
+                "state": "TX",
+                "countryId": "US",
+                "postalCode": "78701",
+            },
+            "package": {
+                "id": "018f1234-5678-7000-8000-000000000002",
+                "description": "Enterprise Tier",
+                "amount": 49.99,
+                "features": {
+                    "domains": 50,
+                    "records": 5000,
+                    "queries": 1000000,
+                    "dnssec": True,
+                    "tsig": True,
+                    "proxy": True,
+                    "customSSO": True,
+                },
+            },
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_get_acc
+
+        info = self.client.get_account()
+        self.assertEqual(info.account_id, "018f1234-5678-7000-8000-000000000001")
+        self.assertEqual(info.company_name, "Acme Corporation")
+        self.assertIsNotNone(info.package)
+        self.assertTrue(info.package.features.custom_sso)
+
+        # 2. get_account_oidc
+        mock_get_oidc = MagicMock()
+        mock_get_oidc.status = 200
+        mock_get_oidc.read.return_value = json.dumps({
+            "configured": True,
+            "accountId": "018f1234-5678-7000-8000-000000000001",
+            "discoveryUrl": "https://idp.example.com/.well-known/openid-configuration",
+            "clientId": "client-123",
+            "clientSecretMasked": "secr*****",
+            "enforceSso": False,
+            "breakGlassAdminsCount": 1,
+            "canEnforceSso": True,
+            "nonCompliantUsers": [],
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_get_oidc
+
+        oidc = self.client.get_account_oidc()
+        self.assertTrue(oidc.configured)
+        self.assertEqual(oidc.client_id, "client-123")
+
+        # 3. save_account_oidc
+        mock_save_oidc = MagicMock()
+        mock_save_oidc.status = 200
+        mock_save_oidc.read.return_value = json.dumps({
+            "configured": True,
+            "discoveryUrl": "https://idp.example.com/.well-known/openid-configuration",
+            "clientId": "client-123",
+            "enforceSso": True,
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_save_oidc
+
+        saved = self.client.save_account_oidc(
+            discovery_url="https://idp.example.com/.well-known/openid-configuration",
+            client_id="client-123",
+            client_secret="secret123",
+            enforce_sso=True,
+        )
+        self.assertTrue(saved.enforce_sso)
+
+        # 4. test_account_oidc
+        mock_test_oidc = MagicMock()
+        mock_test_oidc.status = 200
+        mock_test_oidc.read.return_value = json.dumps({
+            "success": True,
+            "issuer": "https://idp.example.com",
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_test_oidc
+
+        test_res = self.client.test_account_oidc("https://idp.example.com/.well-known/openid-configuration")
+        self.assertTrue(test_res.success)
+        self.assertEqual(test_res.issuer, "https://idp.example.com")
+
+        # 5. delete_account_oidc
+        mock_del_oidc = MagicMock()
+        mock_del_oidc.status = 200
+        mock_del_oidc.read.return_value = json.dumps({
+            "success": True,
+            "message": "OIDC configuration removed successfully",
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_del_oidc
+
+        del_res = self.client.delete_account_oidc()
+        self.assertTrue(del_res["success"])
+
+    @patch("urllib.request.urlopen")
     def test_error_handling_401(self, mock_urlopen):
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url="https://api.onlydns.com/v1/dns",

@@ -16,6 +16,11 @@ from .exceptions import (
     ValidationError,
 )
 from .models import (
+    AccountInfo,
+    AccountMetricsResponse,
+    AccountOidcConfig,
+    AccountOidcTestResponse,
+    BillingStatusResponse,
     DNSRecord,
     DNSSECStatus,
     DomainTsigPermissions,
@@ -82,7 +87,7 @@ class OnlyDNSClient:
         headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Accept": "application/json",
-            "User-Agent": "OnlyDNS-Python-SDK/1.0.1",
+            "User-Agent": "OnlyDNS-Python-SDK/1.0.2",
         }
 
         data_bytes = None
@@ -505,3 +510,109 @@ class OnlyDNSClient:
         """
         encoded_domain = urllib.parse.quote(domain_name, safe="")
         self._request("DELETE", f"/dns/{encoded_domain}/dnssec")
+
+    # --------------------------------------------------------------------------
+    # Account & Custom OIDC SSO Methods
+    # --------------------------------------------------------------------------
+
+    def get_account(self) -> AccountInfo:
+        """Retrieve account metadata, contact details, and billing package feature entitlements.
+
+        Returns:
+            AccountInfo object.
+        """
+        res = self._request("GET", "/account")
+        return AccountInfo.from_dict(res if isinstance(res, dict) else {})
+
+    def get_account_billing(self) -> BillingStatusResponse:
+        """Retrieve account billing status, balances, and non-payment suspension state.
+
+        Returns:
+            BillingStatusResponse object.
+        """
+        res = self._request("GET", "/account/billing")
+        return BillingStatusResponse.from_dict(res if isinstance(res, dict) else {})
+
+    def get_account_metrics(self) -> AccountMetricsResponse:
+        """Retrieve real-time account resource usage and plan feature limits.
+
+        Returns:
+            AccountMetricsResponse object.
+        """
+        res = self._request("GET", "/account/metrics")
+        return AccountMetricsResponse.from_dict(res if isinstance(res, dict) else {})
+
+    def get_account_oidc(self) -> AccountOidcConfig:
+        """Retrieve custom OIDC Single Sign-On configuration, enforcement policy, and non-compliant users.
+
+        Returns:
+            AccountOidcConfig object.
+        """
+        res = self._request("GET", "/account/oidc")
+        return AccountOidcConfig.from_dict(res if isinstance(res, dict) else {})
+
+    def save_account_oidc(
+        self,
+        discovery_url: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        enforce_sso: Optional[bool] = None,
+    ) -> AccountOidcConfig:
+        """Create or update custom OIDC Single Sign-On configuration and enforcement settings.
+
+        Args:
+            discovery_url: OIDC Discovery URL.
+            client_id: OIDC Client ID.
+            client_secret: OIDC Client Secret.
+            enforce_sso: Whether to enforce SSO login policy.
+
+        Returns:
+            AccountOidcConfig object.
+        """
+        body: Dict[str, Any] = {}
+        if discovery_url is not None:
+            body["discoveryUrl"] = discovery_url
+        if client_id is not None:
+            body["clientId"] = client_id
+        if client_secret is not None:
+            body["clientSecret"] = client_secret
+        if enforce_sso is not None:
+            body["enforceSso"] = enforce_sso
+
+        res = self._request("POST", "/account/oidc", body=body)
+        return AccountOidcConfig.from_dict(res if isinstance(res, dict) else {})
+
+    def delete_account_oidc(self) -> Dict[str, Any]:
+        """Remove custom OIDC Single Sign-On configuration from the account.
+
+        Returns:
+            Dictionary with deletion status and message.
+        """
+        res = self._request("DELETE", "/account/oidc")
+        return res if isinstance(res, dict) else {"success": True}
+
+    def test_account_oidc(
+        self,
+        discovery_url: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+    ) -> AccountOidcTestResponse:
+        """Test OIDC discovery URL reachability and retrieve identity provider endpoint metadata.
+
+        Args:
+            discovery_url: Optional discovery URL to test (defaults to configured URL if omitted).
+            client_id: Optional client ID to validate.
+            client_secret: Optional client secret to validate.
+
+        Returns:
+            AccountOidcTestResponse object.
+        """
+        body: Dict[str, Any] = {}
+        if discovery_url is not None:
+            body["discoveryUrl"] = discovery_url
+        if client_id is not None:
+            body["clientId"] = client_id
+        if client_secret is not None:
+            body["clientSecret"] = client_secret
+        res = self._request("POST", "/account/oidc/test", body=body if body else None)
+        return AccountOidcTestResponse.from_dict(res if isinstance(res, dict) else {})
