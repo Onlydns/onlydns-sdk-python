@@ -684,7 +684,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version="onlydns-sdk 1.0.2",
+        version="onlydns-sdk 1.0.3",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")

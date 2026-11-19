@@ -87,7 +87,7 @@ class OnlyDNSClient:
         headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Accept": "application/json",
-            "User-Agent": "OnlyDNS-Python-SDK/1.0.2",
+            "User-Agent": "OnlyDNS-Python-SDK/1.0.3",
         }
 
         data_bytes = None
